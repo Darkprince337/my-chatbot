@@ -1,0 +1,40 @@
+{
+    "hi": {
+        "Greetings! How can I help you today?": 0.46855900000000006
+    },
+    "do you know the capital of india": {
+        "Dellhi": 0.36953279000000006
+    },
+    "what is your name": {
+        "Davila": 0.19
+    },
+    "do you know the capital of west bangal": {
+        "kolkata": 0.1
+    },
+    "do you sandip das": {
+        "it is anirban friends": 0.1
+    },
+    "do you know techno inter national new town": {
+        "it is a good collage": 0.1
+    },
+    "greet": {
+        "Hello there!": 0.19,
+        "Hi!": 0.0,
+        "Greetings! How can I help you today?": 0.0
+    },
+    "help": {
+        "What do you need help with?": 0.010000000000000009
+    },
+    "do you know capital of india": {
+        "delhi": 0.1
+    },
+    "do you know sandip das": {
+        "it is anirban friends": 0.1
+    },
+    "who is anirban": {
+        "good boy": 0.1
+    },
+    "what do you want to learn": {
+        "You should first explore the internet wisely and collect all the necessary info about all sectors of education": 0.19
+    }
+}
