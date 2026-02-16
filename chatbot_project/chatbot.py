@@ -14,10 +14,8 @@ DISCOUNT_FACTOR = 0.9
 EXPLORATION_RATE_INITIAL = 0.2
 EXPLORATION_DECAY = 0.995
 MIN_EXPLORATION_RATE = 0.05
-
 DEBUG_MODE = True
 
-### NEW ###
 # A set of common "stop words" to ignore during keyword extraction for better matching.
 STOP_WORDS = {
     'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours',
@@ -41,7 +39,7 @@ rules = {
     "hello": ["Hello there!", "Hi!", "Greetings! How can I help you today?"],
     "hi": ["Hello there!", "Hi!", "Greetings! How can I help you today?"],
     "how are you": ["I'm doing well, thank you!", "I'm a bot, so I don't have feelings, but I'm functioning perfectly!", "All good!", "I am great, thanks for asking!"],
-    "what is your name": ["Davila"],
+    "what is your name": ["My name is Davila."],
     "my name is ": ["Nice to meet you, {name}!", "Hello, {name}!"],
     "what is my name": ["I think your name is {name}.", "Didn't you tell me your name is {name}?"],
     "help": ["How can I assist you today?", "What do you need help with?", "I'm here to help!", "I can help with common questions. What's on your mind?"],
@@ -89,12 +87,12 @@ class Chatbot:
         for state, actions in loaded_q_data.items():
             for action, q_value in actions.items():
                 self.q_table[state][action] = float(q_value)
-        print("Q-table loaded.")
+        if DEBUG_MODE: print("Q-table loaded.")
 
         # Load other data
         self.all_users_data = self._load_json_file(USER_DATA_FILE, {})
         self.learned_knowledge = self._load_json_file(LEARNED_KNOWLEDGE_FILE, {})
-        print("User data and learned knowledge loaded.")
+        if DEBUG_MODE: print("User data and learned knowledge loaded.")
 
     def _save_q_table(self):
         serializable_q_table = {s: dict(a) for s, a in self.q_table.items()}
@@ -113,7 +111,6 @@ class Chatbot:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
 
-    ### NEW ###
     def _extract_keywords(self, text):
         """Normalizes text and extracts keywords by removing stop words."""
         normalized_text = self._normalize_text(text)
@@ -121,19 +118,9 @@ class Chatbot:
         keywords = [word for word in words if word not in STOP_WORDS]
         return keywords
 
-    ### NEW ###
     def _find_best_match_by_keywords(self, normalized_user_input):
         """
         Finds the best matching entry from rules and learned_knowledge based on keyword overlap.
-        
-        Args:
-            normalized_user_input (str): The cleaned user input.
-
-        Returns:
-            A tuple (best_match_key, source, best_score) where:
-            - best_match_key (str|None): The key from the database that matched best.
-            - source (str|None): 'rules' or 'learned_knowledge'.
-            - best_score (int): The number of overlapping keywords.
         """
         user_keywords = self._extract_keywords(normalized_user_input)
         if not user_keywords:
@@ -146,16 +133,12 @@ class Chatbot:
         best_score = 0
         source = None
 
-        # Combine all possible intents and learned questions into one searchable dictionary
         search_database = {}
-        # Add rules (intents) to the database
         search_database.update({key: 'rules' for key in rules.keys() if key != 'fallback'})
-        # Add learned knowledge to the database
         search_database.update({key: 'learned_knowledge' for key in self.learned_knowledge.keys()})
 
         for key, src in search_database.items():
             key_keywords = self._extract_keywords(key)
-            # Calculate score as the number of common keywords
             score = len(set(user_keywords) & set(key_keywords))
             
             if score > best_score:
@@ -171,6 +154,10 @@ class Chatbot:
 
     def _choose_action(self, state):
         actions_for_state = list(rules.get(state, fallback_responses))
+        # Add learned knowledge responses if the state matches a learned question
+        if state in self.learned_knowledge:
+             actions_for_state.append(self.learned_knowledge[state])
+
         if not actions_for_state:
             return random.choice(fallback_responses)
 
@@ -189,7 +176,12 @@ class Chatbot:
         current_q = self.q_table[state][action]
         max_next_q = 0.0
         if next_state in self.q_table and self.q_table[next_state]:
-            defined_next_actions = [a for a in rules.get(next_state, []) if a in self.q_table[next_state]]
+            # Consider all possible actions in the next state from rules and learned knowledge
+            possible_next_actions = list(rules.get(next_state, []))
+            if next_state in self.learned_knowledge:
+                possible_next_actions.append(self.learned_knowledge[next_state])
+            
+            defined_next_actions = [a for a in possible_next_actions if a in self.q_table[next_state]]
             if defined_next_actions:
                 max_next_q = max(self.q_table[next_state][a] for a in defined_next_actions)
         
@@ -199,41 +191,69 @@ class Chatbot:
         self._save_q_table()
 
 
-    # --- Public Methods for Flask App ---
+    # --- Public Methods for Application ---
     def handle_user_login(self, user_id):
+        """Initializes user data if the user is new."""
         if user_id not in self.all_users_data:
             self.all_users_data[user_id] = {
                 "name": None, 
                 "history": [],
                 "last_state": None,
                 "last_action": None,
-                "awaiting_answer_for": None ### NEW: Ensure this key exists ###
+                "awaiting_answer_for": None,
+                "pending_question_to_learn": None # NEW: State to hold question before confirmation
             }
             self._save_user_data()
             return f"Welcome, new user '{user_id}'!"
         return f"Welcome back, {self.all_users_data[user_id].get('name', user_id)}!"
 
     def get_response(self, user_id, user_input):
+        """Main function to get a response from the chatbot."""
         user_data = self.all_users_data.get(user_id)
         if not user_data:
-            return {"response": "Error: User not found. Please login first.", "state": "error"}
+            return {"response": "Error: User not found. Please login first.", "state": "error", "requires_reward": False}
 
         normalized_input = self._normalize_text(user_input)
         bot_response = None
         current_state = None
 
-        # 1. Active learning: If user is providing an answer
+        # --- Active Learning State Machine ---
+        # State 1: User is providing the final answer to a question.
         if user_data.get("awaiting_answer_for"):
             question_to_learn = user_data["awaiting_answer_for"]
-            # We store the normalized question and the raw answer
+            # Store the normalized question and the raw answer
             self.learned_knowledge[self._normalize_text(question_to_learn)] = user_input
-            bot_response = f"Thank you! I've learned that."
-            user_data["awaiting_answer_for"] = None
+            bot_response = "Thanks! I've learned something new."
+            
+            user_data["awaiting_answer_for"] = None # Clear the state
             self._save_learned_knowledge()
             self._save_user_data()
             return {"response": bot_response, "state": "learned", "requires_reward": False}
 
-        # 2. Handle name-related rules first as they are very specific
+        # State 2: User is responding "yes" or "no" to the teaching prompt.
+        if user_data.get("pending_question_to_learn"):
+            question = user_data["pending_question_to_learn"]
+            if normalized_input == "yes":
+                # Transition to the next state: waiting for the answer
+                user_data["awaiting_answer_for"] = question
+                user_data["pending_question_to_learn"] = None
+                bot_response = "Great! What should the answer be?"
+                self._save_user_data()
+                return {"response": bot_response, "state": "learning_answer", "requires_reward": False}
+            elif normalized_input == "no":
+                # Cancel the learning process
+                user_data["pending_question_to_learn"] = None
+                bot_response = "Okay, no problem. What else can I help with?"
+                self._save_user_data()
+                return {"response": bot_response, "state": "learning_cancelled", "requires_reward": False}
+            else:
+                # If user types something other than yes/no, prompt again.
+                bot_response = f"Please answer with 'yes' or 'no'. Do you want to teach me the answer to '{question}'?"
+                return {"response": bot_response, "state": "fallback_teach_prompt", "requires_reward": False}
+
+
+        # --- Standard Response Logic ---
+        # 1. Handle specific name-related rules
         if "my name is " in user_input.lower():
             try:
                 name = user_input.lower().split("my name is ")[1].strip().capitalize()
@@ -247,12 +267,10 @@ class Chatbot:
                 bot_response = random.choice(rules["what is my name"]).format(name=user_data["name"])
                 current_state = "what is my name"
 
-        ### NEW ###
-        # 3. Use the new NLP keyword matching to search the entire database
+        # 2. Use NLP keyword matching if no specific rule has matched yet
         if not bot_response:
             best_match, source, score = self._find_best_match_by_keywords(normalized_input)
-            
-            # We require at least one keyword to match
+            # We require at least one keyword to match to be confident
             if score > 0 and best_match:
                 current_state = best_match
                 if source == 'rules':
@@ -262,14 +280,17 @@ class Chatbot:
                     # If it's something learned, give the direct answer
                     bot_response = self.learned_knowledge[best_match]
         
-        # 4. Fallback and trigger active learning if no response has been found yet
+        # 3. Fallback: If no response found, trigger the active learning process
         if not bot_response:
-            current_state = "fallback" # Set state to fallback
-            user_data["awaiting_answer_for"] = user_input # Use raw input for the question
-            bot_response = f"I don't know how to respond to '{user_input}'. Can you please tell me what I should say?"
+            current_state = "fallback_teach_prompt" 
+            # Set the pending state for the *next* turn, storing the raw user input
+            user_data["pending_question_to_learn"] = user_input 
+            bot_response = f"I don't have an answer for '{user_input}'. Do you want to teach me? (yes/no)"
             self._save_user_data()
-            return {"response": bot_response, "state": "fallback_learn", "requires_reward": False}
-        
+            # This is a prompt, not a final answer, so it doesn't need a reward.
+            return {"response": bot_response, "state": current_state, "requires_reward": False}
+
+        # --- Save State for Q-Learning ---
         # Store state for next turn's reward update
         user_data["last_state"] = current_state
         user_data["last_action"] = bot_response
@@ -278,6 +299,7 @@ class Chatbot:
         return {"response": bot_response, "state": current_state, "requires_reward": True}
 
     def provide_feedback(self, user_id, reward):
+        """Applies reward to the last state-action pair for a user."""
         user_data = self.all_users_data.get(user_id)
         if not user_data or not user_data.get("last_state") or not user_data.get("last_action"):
             return "Could not apply reward. No previous action found for this user."
@@ -285,8 +307,8 @@ class Chatbot:
         last_state = user_data["last_state"]
         last_action = user_data["last_action"]
         
-        # We don't have a "next_state" until the user types again, 
-        # so we can simplify the update or use a placeholder. Let's use 'unknown_next_state'.
+        # In a real-time chat, the 'next_state' is unknown until the user's next message.
+        # We can pass a placeholder to the Q-table update function.
         self._update_q_table(last_state, last_action, reward, "unknown_next_state")
 
         # Clear last action to prevent rewarding twice
