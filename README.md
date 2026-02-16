@@ -9,6 +9,9 @@
 ![Python](https://img.shields.io/badge/Python-3.10-blue?style=for-the-badge&logo=python)
 ![Flask](https://img.shields.io/badge/Flask-Web%20Framework-black?style=for-the-badge&logo=flask)
 ![AI](https://img.shields.io/badge/AI-Reinforcement%20Learning-green?style=for-the-badge)
+![HTML](https://img.shields.io/badge/HTML-Frontend-orange?style=for-the-badge&logo=html5)
+![CSS](https://img.shields.io/badge/CSS-Styling-blue?style=for-the-badge&logo=css3)
+![JavaScript](https://img.shields.io/badge/JavaScript-Client%20Side-yellow?style=for-the-badge&logo=javascript)
 
 </p>
 
@@ -16,7 +19,8 @@
 
 ## 📌 Overview
 
-This project is an **AI-powered chatbot** built using **Flask and Reinforcement Learning (Q-Learning)**.  
+This project is an **AI-powered chatbot** built using **Flask, Python, and Reinforcement Learning (Q-Learning)** with a **frontend developed using HTML, CSS, and JavaScript**.
+
 Unlike traditional chatbots, this system can:
 
 ✔ Learn from user feedback  
@@ -35,6 +39,7 @@ Unlike traditional chatbots, this system can:
 
 ### 💬 Chat System
 - Real-time chat interface
+- Dynamic message rendering using JavaScript
 - User-specific conversation tracking
 - REST API based communication
 
@@ -58,6 +63,12 @@ Unlike traditional chatbots, this system can:
 - Users rate responses
 - Updates Q-table dynamically
 
+### 🎨 Frontend (HTML, CSS, JavaScript)
+- Responsive UI using HTML & CSS
+- Dynamic chat updates using JavaScript
+- API communication using Fetch/AJAX
+- Interactive user experience
+
 ### 💾 Persistent Storage
 - Q-table
 - User data
@@ -75,10 +86,8 @@ Find Best Match (Rules / Learned Knowledge)
           ↓
 Select Response (Q-Learning)
           ↓
-Send Response
+Send Response (via Flask API)
+          ↓
+Frontend (JS) Displays Message
           ↓
 User Feedback → Update Q-Table
-
-
-
-
